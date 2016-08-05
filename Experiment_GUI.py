@@ -43,7 +43,7 @@ class Main(QMainWindow, Ui_MainWindow):
         self.setupUi(self)
         
         self.Exp = Experiment()# lunch the experiment
-        self.list_APT()
+        self.list_connected_APT()
         if self.Exp.hcam.n_cameras == 0: # If no Hammamatsu camera connected
             self.checkBox_Camera.setChecked(False) # Uncheck the Qcheckbox.
         
@@ -119,6 +119,7 @@ class Main(QMainWindow, Ui_MainWindow):
         self.checkBox_APT_hwp_out.clicked.connect(self.Switch_APT_hwp_out)
         self.checkBox_APT_hwp_laser.clicked.connect(self.Switch_APT_hwp_laser)
         self.checkBox_Laser.clicked.connect(self.Switch_Laser)
+        self.checkBox_TDC.clicked.connect(self.switch_SPD)
         self.listWidget_APT.itemClicked.connect(self.change_APT)
         self.pushButton_Home.clicked.connect(self.Home)
         self.pushButton_mAbs.clicked.connect(self.MoveAbs)
@@ -184,6 +185,9 @@ class Main(QMainWindow, Ui_MainWindow):
         #setup the PG Camera signal plot
         self.curve_PGcam_V = Qwt.QwtPlotCurve()
         self.curve_PGcam_V.attach(self.qwtPlot_PGcam_V)
+        #setup the saturation curve 
+        self.curve_sat = Qwt.QwtPlotCurve()
+        self.curve_sat.attach(self.qwtPlot_hcam)
         #setup the saturation Fit curve 
         self.curve_Sat_fit = Qwt.QwtPlotCurve()
         self.curve_Sat_fit.attach(self.qwtPlot_hcam)
@@ -394,7 +398,7 @@ class Main(QMainWindow, Ui_MainWindow):
         
     def change_APT(self, item): # Change the current APT motor
         APTname = item.text() # read the selected list element 
-        self.CurrentAPT = self.APT_dict[APTname] # Search in the dictionary the corresponding instance
+        self.CurrentAPT = self.Exp.connected_apt_dict[APTname] # Search in the dictionary the corresponding instance
         
     def closeCamera(self):
         self.Exp.hcam.shutdown()
@@ -412,7 +416,7 @@ class Main(QMainWindow, Ui_MainWindow):
         self.Plot_fit_Psat()
     
     def from_lineEdit(self, lineEditName):
-        return getattr(self,lineEditName).text() # return the string text of desired qlineEdit widget
+        return getattr(self, lineEditName).text() # return the string text of desired qlineEdit widget
         
     def GetPos(self):
         pos = self.CurrentAPT.getPos()
@@ -459,10 +463,10 @@ class Main(QMainWindow, Ui_MainWindow):
 #        self.Set_hwp_laser_start()
 #        self.Set_hwp_laser_stop()
 #        self.Set_hwp_laser_step()
-        self.hwp_laser_start_Pos
-        self.hwp_laser_stop_Pos
-        self.hwp_laser_step
-        Pos = range(self.hwp_laser_start_Pos, self.hwp_laser_stop_Pos, self.hwp_laser_step)
+        self.qwp_in_red_start_Pos = self.from_lineEdit('lineEdit_qwp_in_red_start')
+        self.qwp_in_red_stop_Pos = self.from_lineEdit('lineEdit_qwp_in_red_stop')
+        self.qwp_in_red_step_Pos = self.from_lineEdit('lineEdit_qwp_in_red_step')
+        Pos = range(self.qwp_in_red_start_Pos, self.qwp_in_red_stop_Pos, self.qwp_in_red_step_Pos)
         self.S = np.zeros(len(Pos))
         i = 0
         for p in Pos:
@@ -528,10 +532,10 @@ class Main(QMainWindow, Ui_MainWindow):
         self.Set_Plot_resolution()
         self.normalisation = self.checkBox_normalisation.isChecked()
         
-    def list_APT(self):
-        self.APT_dict = {}
-        for l in ['RMHWP', 'RMQWP', 'RMHWP_out', 'RMHWP_in_red', 'RMQWP_in_red']:
-            self.addAPT(l)
+    def list_connected_APT(self):
+        for key in self.Exp.connected_apt_dict: # For each connected apt controller ...
+            self.listWidget_APT.addItem(key) #add APT label to the list widget of the GUI.
+                
             
     def Measure_Stokes(self):
         if self.acquiring_Csignal: #If signal acquisition is going on ...
@@ -648,9 +652,9 @@ class Main(QMainWindow, Ui_MainWindow):
         self.qwtPlot_hcam.replot()
         
     def Plot_Psat(self, x, y):
-        self.curve.setData(x, y)
-        self.curve.setStyle(Qwt.QwtPlotCurve.Dots)
-        self.curve.setPen(Qt.QPen(Qt.Qt.blue, 3))
+        self.curve_sat.setData(x, y)
+        self.curve_sat.setStyle(Qwt.QwtPlotCurve.Dots)
+        self.curve_sat.setPen(Qt.QPen(Qt.Qt.blue, 3))
         self.qwtPlot_hcam.setAxisTitle(0, u'Pout (counts)')
         self.qwtPlot_hcam.setAxisTitle(2, u'Pin (V)')
         self.qwtPlot_hcam.replot()
@@ -714,6 +718,9 @@ class Main(QMainWindow, Ui_MainWindow):
         #setup the hamamatsu Camera signal plot
         self.curve_hcam = Qwt.QwtPlotCurve()
         self.curve_hcam.attach(self.qwtPlot_hcam)
+        #setup the saturation curve 
+        self.curve_sat = Qwt.QwtPlotCurve()
+        self.curve_sat.attach(self.qwtPlot_hcam)
         #setup the saturation Fit curve 
         self.curve_Sat_fit = Qwt.QwtPlotCurve()
         self.curve_Sat_fit.attach(self.qwtPlot_hcam)
@@ -816,12 +823,6 @@ class Main(QMainWindow, Ui_MainWindow):
         self.hwp_out_stop_Pos = int(self.lineEdit_hwp_out_stop.text()) 
     def Set_hwp_out_step(self):
         self.hwp_out_step= int(self.lineEdit_hwp_out_step.text())
-    def Set_hwp_laser_start(self):
-        self.hwp_laser_start_Pos = int(self.lineEdit_hwp_laser_start.text())
-    def Set_hwp_laser_stop(self):
-        self.hwp_laser_stop_Pos = int(self.lineEdit_hwp_laser_stop.text()) 
-    def Set_hwp_laser_step(self):
-        self.hwp_laser_step = int(self.lineEdit_hwp_laser_step.text())
     def Set_x0(self):
         self.Exp.x0 = int(self.lineEdit_x0.text())
     def Set_y0(self):
@@ -1001,6 +1002,15 @@ class Main(QMainWindow, Ui_MainWindow):
             # Close camera connection
             self.Exp.hcam.shutdown()
             self.Exp.hcam.terminate()
+    
+    def switch_SPD(self):
+        if self.checkBox_TDC.isChecked():
+            dev_list, dev_numb = self.Exp.SPD.ListATdevices()
+            if dev_numb == 0: self.ShowMessage('No Aurea devices detected.')
+            else : self.ShowMessage('Aurea devices connected : {l}'.format(l = dev_list))
+            if dev_numb == 1: self.Exp.SPD.OpenATdevice(0) # Open device by default
+        if (not self.checkBox_TDC.isChecked()) and self.Exp.SPD.AT_device_opened:
+            self.Exp.SPD.CloseATdevice() 
     
     def Set_hcam_max(self):
         self.S_hcam_max = float(self.lineEdit_hcam_max.text())

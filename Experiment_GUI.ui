@@ -60,7 +60,7 @@
              </layout>
             </item>
             <item>
-             <layout class="QVBoxLayout" name="verticalLayout_23" stretch="0,1,1">
+             <layout class="QVBoxLayout" name="verticalLayout_23" stretch="0,0,1">
               <item>
                <layout class="QHBoxLayout" name="horizontalLayout_26">
                 <property name="spacing">
@@ -1803,7 +1803,7 @@
                              </widget>
                             </item>
                             <item>
-                             <widget class="QLineEdit" name="lineEdit_hwp_laser">
+                             <widget class="QLineEdit" name="lineEdit_hwp_laser_start">
                               <property name="sizePolicy">
                                <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
                                 <horstretch>0</horstretch>
@@ -1817,7 +1817,7 @@
                                </size>
                               </property>
                               <property name="text">
-                               <string>0</string>
+                               <string>-7</string>
                               </property>
                              </widget>
                             </item>
@@ -1848,7 +1848,7 @@
                              </widget>
                             </item>
                             <item>
-                             <widget class="QLineEdit" name="lineEdit_hwp_out_stop_2">
+                             <widget class="QLineEdit" name="lineEdit_hwp_laser_stop">
                               <property name="sizePolicy">
                                <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
                                 <horstretch>0</horstretch>
@@ -1862,7 +1862,7 @@
                                </size>
                               </property>
                               <property name="text">
-                               <string>360</string>
+                               <string>40</string>
                               </property>
                              </widget>
                             </item>
@@ -1896,7 +1896,7 @@
                              </widget>
                             </item>
                             <item>
-                             <widget class="QLineEdit" name="lineEdit_hwp_out_step_2">
+                             <widget class="QLineEdit" name="lineEdit_hwp_laser_step">
                               <property name="sizePolicy">
                                <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
                                 <horstretch>0</horstretch>
@@ -1910,7 +1910,7 @@
                                </size>
                               </property>
                               <property name="text">
-                               <string>8</string>
+                               <string>3</string>
                               </property>
                              </widget>
                             </item>
