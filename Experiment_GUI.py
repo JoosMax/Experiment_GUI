@@ -99,6 +99,8 @@ class Main(QMainWindow, Ui_MainWindow):
         self.pushButton_calibrate_wp.clicked.connect(self.calibrate_wp)
         self.pushButton_Psat.clicked.connect(self.Psat_measurement)
         self.pushButton_Fit_sat.clicked.connect(self.Fit_sat)
+        self.pushButton_start_apd.clicked.connect(self.start_APD)
+        self.pushButton_stop_apd.clicked.connect(self.stop_APD)
         
         self.comboBox_select_camera.currentIndexChanged.connect(self.Set_CurrentCam)
         self.comboBox_resolution.currentIndexChanged.connect(self.Set_Plot_resolution)
@@ -108,9 +110,12 @@ class Main(QMainWindow, Ui_MainWindow):
         self.Camera_3 = self.comboBox_select_camera.itemText(2) # PointGrey camera
         self.Camera_all = self.comboBox_select_camera.itemText(3) # PointGrey camera
         self.checkBox_normalisation.clicked.connect(self.Switch_normalisation)
+#        self.checkBox_Dark.clicked.connect(self.switch_dark)
         # Devices Tab
         self.checkBox_Shutter.clicked.connect(self.Switch_Shutter)
         self.checkBox_Shutter_out.clicked.connect(self.Switch_Shutter_out)
+        self.checkBox_Shutter_microscope.clicked.connect(self.Switch_Shutter_microscope)
+        self.checkBox_Arduino_Pin_6.clicked.connect(self.Switch_Pin_6)
         self.checkBox_Arduino.clicked.connect(self.Switch_Arduino)
         self.checkBox_Camera.clicked.connect(self.Switch_camera)
         self.checkBox_Camera_PG.clicked.connect(self.Switch_camera_PG)
@@ -164,17 +169,13 @@ class Main(QMainWindow, Ui_MainWindow):
         self.acquiring_Psat = False
         self.acquisition_thread_Psat.finished.connect(self.callback_Psat)
         
-#        blank = np.random.randint(0,255,(1024, 1280))
-#        self.fig_image = Figure()
-#        self.image = self.fig_image.add_subplot(111)
-#        self.h = self.image.imshow(blank, interpolation = 'none')
-#        self.fig_image.gca().set_aspect('auto')
-#        self.fig_image.colorbar(self.h)
-#        self.canvas_image = FigureCanvas(self.fig_image)
-#        self.mplvl_image.addWidget(self.canvas_image)
-#        self.canvas_image.draw()
-#        self.toolbar_image = NavigationToolbar(self.canvas_image, self.mplwindow_image, coordinates=True)
-#        self.mplvl_image.addWidget(self.toolbar_image)
+        # Acquisition thread for APD count rate ploting
+        self.N_APD = 100
+        self.APD1_CountRate = np.zeros(self.N_APD)
+        self.APD2_CountRate = np.zeros(self.N_APD)
+        self.acquisition_thread_APD = Thread(self.Acquire_APD)
+        self.acquiring_APD = False
+        self.acquisition_thread_APD.finished.connect(self.callback_APD)
         
         #setup the hamamatsu Camera signal plot
         self.curve_hcam = Qwt.QwtPlotCurve()
@@ -220,9 +221,24 @@ class Main(QMainWindow, Ui_MainWindow):
         self.toolbar_map_St = NavigationToolbar(self.canvas_map_St, self.mplwindow_map_St, coordinates=True)
         self.mplvl_map_St.addWidget(self.toolbar_map_St)
         
+    def Acquire_APD(self):
+        CountRate_APD1,  CountRate_APD2 = self.Exp.getCountRateData(self.APD_plot_sample_time, 1, False)[0] / self.APD_plot_sample_time # [Counts/s]
+        self.APD1_CountRate = np.roll(self.APD1_CountRate,-1) # Shift all points to the left
+        self.APD2_CountRate = np.roll(self.APD2_CountRate,-1) # Shift all points to the left
+        self.APD1_CountRate[self.N_APD-1] = CountRate_APD1 # Update data
+        self.APD2_CountRate[self.N_APD-1] = CountRate_APD2 # Update data
+        
     def Acquire_calibration(self):
         self.pos_hwp_out = range(self.hwp_out_start_Pos, self.hwp_out_stop_Pos, self.hwp_out_step)
-        self.Exp.calibrate_wp(self.pos_hwp_out, self.Exp.Pol_chan)
+        Oscillo_name = self.comboBox_select_source_calibration.currentText()
+        dev = getattr(self.Exp, Oscillo_name)
+        Ch = int(self.comboBox_Channel.currentText())
+#        Angle = int(self.lineEdit_Analyser_angle.text())
+        motor_name = self.comboBox_APT.currentText()
+        RM = getattr(self.Exp, motor_name)
+        dark = self.checkBox_Dark.isChecked()
+        shutter_pin = int(self.lineEdit_shutter_pin.text())
+        self.Exp.calibrate_wp(self.pos_hwp_out, dev, Ch, RM, dark, shutter_pin)
         
     def Acquire_Csignal(self): # acquire the signal in the thread
         time.sleep(0.05)
@@ -284,17 +300,27 @@ class Main(QMainWindow, Ui_MainWindow):
         self.Sn = self.Sd/self.St
         
     def Acquire_Psat(self):
-#        self.Set_hwp_laser_start()
-#        self.Set_hwp_laser_stop()
-#        self.Set_hwp_laser_step()
         self.hwp_laser_start_Pos = int(self.from_lineEdit('lineEdit_hwp_laser_start'))
         self.hwp_laser_stop_Pos = int(self.from_lineEdit('lineEdit_hwp_laser_stop'))
         self.hwp_laser_step = int(self.from_lineEdit('lineEdit_hwp_laser_step'))
-        Pos = range(self.hwp_laser_start_Pos, self.hwp_laser_stop_Pos, self.hwp_laser_step)
-        self.Sin_Psat, self.Sout_Psat = self.Exp.Psat(Pos)
+#        Pos = range(self.hwp_laser_start_Pos, self.hwp_laser_stop_Pos, self.hwp_laser_step)
+        Pos = np.logspace(np.log10(self.hwp_laser_start_Pos), np.log10(self.hwp_laser_stop_Pos), 20)
+        Oscillo_name = self.comboBox_select_source_saturation.currentText()
+        dev = getattr(self.Exp, Oscillo_name) # desired oscilloscope
+        Ch = int(self.comboBox_Input_S.currentText()) # desired channel
+        Sout_Source = self.comboBox_Output_S.currentText()
+        shutter_pin = int(self.lineEdit_shutter_pin.text())
+        N_samples = int(self.from_lineEdit('lineEdit_Saturation_N_samples'))
+        N_bright_points = int(self.from_lineEdit('lineEdit_Saturation_bright_points'))
+        self.Sin_Psat, self.Sout_Psat = self.Exp.Psat(Pos, dev, Ch, Sout_Source, shutter_pin, N_samples, N_bright_points)
         
     def Acquire_Stokes(self):
-        self.Stokes_raw = self.Exp.getStokes(self.pos_hwp_out, self.retardance, self.phi_0, self.comboBox_select_source.currentText())
+        shutter_pin = int(self.lineEdit_shutter_pin.text())
+        motor_name = self.comboBox_APT.currentText()
+        RM = getattr(self.Exp, motor_name)
+        N_samples = int(self.from_lineEdit('lineEdit_Saturation_N_samples'))
+        N_bright_points = int(self.from_lineEdit('lineEdit_Saturation_bright_points'))
+        self.Stokes_raw = self.Exp.getStokes(self.pos_hwp_out, self.retardance, self.phi_0, self.comboBox_select_source.currentText(), shutter_pin, RM, N_samples, N_bright_points)
         
     def addAPT(self, l):
         try:
@@ -349,12 +375,18 @@ class Main(QMainWindow, Ui_MainWindow):
         self.Plot_St()
         if self.cntr >= len(self.pos_qwp): # if all positions have been measured
             self.acquiring_map = False
-            if self.checkBox_Save_and_close.isChecked():
-                self.Save()
-                self.Exp.Laser('off')
-                self.Exp.Shutter('open')
+#            if self.checkBox_Save_and_close.isChecked():
+#                self.Save()
+#                self.Exp.Laser('off')
+#                self.Exp.Shutter('open')
         if self.acquiring_map:
             self.acquisition_thread.start() # restart the polarisation map acquisition.
+            
+    def callback_APD(self):
+        if self.acquiring_APD:
+            self.Plot_curve_hcam( np.arange(0, self.N_APD), self.APD1_CountRate)
+            self.Plot_curve_PGcam( np.arange(0, self.N_APD), self.APD2_CountRate)
+            self.acquisition_thread_APD.start() # Restart acquisition thread
             
     def callback_calibration(self):
         self.lineEdit_retardance.setText(str(np.round(self.Exp.retardance, 4)))
@@ -381,7 +413,10 @@ class Main(QMainWindow, Ui_MainWindow):
     def callback_Stokes(self):
         self.Stokes_norm = self.Stokes_raw / self.Stokes_raw[0]
         self.Degree_of_pol = np.sqrt(self.Stokes_raw[1]**2 + (self.Stokes_raw[2])**2 + (self.Stokes_raw[3])**2)/self.Stokes_raw[0]
+        self.Degree_of_lin_pol = np.sqrt(self.Stokes_norm[1]**2 + (self.Stokes_norm[2])**2)
+        
         self.lineEdit_Degree_of_pol.setText(str(np.round(self.Degree_of_pol, 2)))
+        self.lineEdit_Degree_of_lin_pol.setText(str(np.round(self.Degree_of_lin_pol, 2)))
         self.lineEdit_Stokes_0.setText(str(np.round(self.Stokes_raw[0], 2)))
         self.lineEdit_Stokes_1.setText(str(np.round(self.Stokes_raw[1], 2)))
         self.lineEdit_Stokes_2.setText(str(np.round(self.Stokes_raw[2], 2)))
@@ -412,11 +447,14 @@ class Main(QMainWindow, Ui_MainWindow):
         
     def Fit_sat(self):
         self.Fit, self.par, self.par_guess, self.par_Std = Satlmfit(self.Sin_Psat, self.Sout_Psat)
-        self.lineEdit_Psat.setText(str(self.par[1]))
+        self.lineEdit_Psat.setText(str(np.round(self.par[1], 3)))
         self.Plot_fit_Psat()
     
     def from_lineEdit(self, lineEditName):
-        return getattr(self, lineEditName).text() # return the string text of desired qlineEdit widget
+        """
+        lineEdit : String. QLineEdit name in the Qt .ui file.
+        """
+        return getattr(self, lineEditName).text() # return the string text of desired QLineEdit widget
         
     def GetPos(self):
         pos = self.CurrentAPT.getPos()
@@ -460,9 +498,6 @@ class Main(QMainWindow, Ui_MainWindow):
         self.lineEdit_hwp_in_red_stop.setText(str(int(extremum_pos + 17)))
         
     def qwp_fextremum(self):
-#        self.Set_hwp_laser_start()
-#        self.Set_hwp_laser_stop()
-#        self.Set_hwp_laser_step()
         self.qwp_in_red_start_Pos = self.from_lineEdit('lineEdit_qwp_in_red_start')
         self.qwp_in_red_stop_Pos = self.from_lineEdit('lineEdit_qwp_in_red_stop')
         self.qwp_in_red_step_Pos = self.from_lineEdit('lineEdit_qwp_in_red_step')
@@ -501,9 +536,6 @@ class Main(QMainWindow, Ui_MainWindow):
         self.Set_hwp_start()
         self.Set_hwp_stop()
         self.Set_hwp_step()
-#        self.Set_hwp_in_red_start()
-#        self.Set_hwp_in_red_stop()
-#        self.Set_hwp_in_red_step()
         self.Set_qwp_start()
         self.Set_qwp_stop()
         self.Set_qwp_step()
@@ -528,6 +560,8 @@ class Main(QMainWindow, Ui_MainWindow):
         self.Set_PG_V_x1()
         self.Set_PG_V_y1()
         self.Set_Exp_time_PG_V()
+        # Parameters Tab
+        self.lineEdit_SPD_sample_time.setText(str(self.Exp.SPD_sample_time))
         
         self.Set_Plot_resolution()
         self.normalisation = self.checkBox_normalisation.isChecked()
@@ -535,12 +569,12 @@ class Main(QMainWindow, Ui_MainWindow):
     def list_connected_APT(self):
         for key in self.Exp.connected_apt_dict: # For each connected apt controller ...
             self.listWidget_APT.addItem(key) #add APT label to the list widget of the GUI.
-                
+            self.comboBox_APT.addItem(key)
             
     def Measure_Stokes(self):
         if self.acquiring_Csignal: #If signal acquisition is going on ...
             self.Stop_Csignal() # Stop it.
-        self.Exp.Shutter('open')
+#        self.Exp.Shutter('open')
         self.pos_hwp_out = range(self.hwp_out_start_Pos, self.hwp_out_stop_Pos, self.hwp_out_step)
         self.Set_retardance()
         self.Set_phi_0()
@@ -655,7 +689,7 @@ class Main(QMainWindow, Ui_MainWindow):
         self.curve_sat.setData(x, y)
         self.curve_sat.setStyle(Qwt.QwtPlotCurve.Dots)
         self.curve_sat.setPen(Qt.QPen(Qt.Qt.blue, 3))
-        self.qwtPlot_hcam.setAxisTitle(0, u'Pout (counts)')
+        self.qwtPlot_hcam.setAxisTitle(0, u'Pout (counts/s)')
         self.qwtPlot_hcam.setAxisTitle(2, u'Pin (V)')
         self.qwtPlot_hcam.replot()
         
@@ -782,6 +816,12 @@ class Main(QMainWindow, Ui_MainWindow):
         except: pass
         try: np.save(os.path.join(Time_folder,'Stokes_std'), self.Exp.Std_Stokes)
         except: pass
+        try: np.save(os.path.join(Time_folder,'Stokes_Fit'), self.Exp.Fit_Stokes)
+        except: pass
+        try: np.save(os.path.join(Time_folder,'Deg_of_pol'), self.Degree_of_pol)
+        except: pass
+        try: np.save(os.path.join(Time_folder,'Deg_of_lin_pol'), self.Degree_of_lin_pol)
+        except: pass
         try: np.save(os.path.join(Time_folder,'Sn'), self.Sn)
         except: pass
         try: np.save(os.path.join(Time_folder,'Sd'), self.Sd)
@@ -790,13 +830,27 @@ class Main(QMainWindow, Ui_MainWindow):
         except: pass
         try: np.save(os.path.join(Time_folder,'ROI'), np.array([self.Exp.x0, self.Exp.y0, self.Exp.width, self.Exp.height]))
         except: pass
+        try: # Save the polarisation plot as a png file
+            pixmap = QtGui.QPixmap.grabWidget(self.qwtPlot_pola) # create a Pixmap
+            pixmap.save(os.path.join(Time_folder,'Plot_pola_' + Time + '.png'), "PNG") # Save pixmap
+        except: pass
+        try: np.save(os.path.join(Time_folder,'Sat_parameters'), self.par)
+        except: pass
+        try: np.save(os.path.join(Time_folder,'Sat_Sout'), self.Sout_Psat)
+        except: pass
+        try: np.save(os.path.join(Time_folder,'Sat_Sin'), self.Sin_Psat)
+        except: pass
+        try: # Save the Saturation plot as a png file
+            pixmap = QtGui.QPixmap.grabWidget(self.qwtPlot_hcam) # create a Pixmap
+            pixmap.save(os.path.join(Time_folder,'Plot_Psat_' + Time + '.png'), "PNG") # Save pixmap
+        except: pass
 
     def Set_APD_index(self):
         self.APD_index = int(self.lineEdit_APD_index.text()) # index 0 (1) for APD 1 (2)
     def Set_CurrentCam(self):
         self.CurrentCam = self.comboBox_select_camera.currentText()
     def Set_SPD_sample_time(self):
-        self.Exp.SPD_sample_time = int(self.lineEdit_SPD_sample_time.text())
+        self.Exp.SPD_sample_time = float(self.lineEdit_SPD_sample_time.text())
     def Set_Arduino_port(self):
         self.Arduino_port = self.lineEdit_Arduino_port.text()
     def Set_hwp_start(self):
@@ -917,10 +971,18 @@ class Main(QMainWindow, Ui_MainWindow):
         if self.CurrentCam == self.Camera_1: # if Hamamatsu camera is selected ...
             self.Exp.hcam_compatible_ROI([[self.Exp.x0, self.Exp.y0], [self.Exp.x0 + self.Exp.width, self.Exp.y0 + self.Exp.height]])
             self.Show_ROI_par()
-            self.Snapshot_pic = self.Exp.GetDarkSubstractedImage()
+            Snapshot_pic = self.Exp.GetDarkSubstractedImage()
         elif self.CurrentCam == self.Camera_2: # if PointGrey camera is selected ...
-            self.Snapshot_pic = self.Exp.GetDarkSubstractedImage_PG()
-        self.Plot_camera(self.Snapshot_pic)
+            Snapshot_pic = self.Exp.GetDarkSubstractedImage_PG()
+        self.Plot_camera(Snapshot_pic, 'label_Plot_Camera')
+        
+    def start_APD(self):
+        self.acquiring_APD = True
+        self.APD_plot_sample_time = float(self.from_lineEdit('lineEdit_plot_sample_time'))
+        self.Exp.SPD.SetVisibleModuleDetectionMode(0,0) # Continuous mode for APD 1
+        self.Exp.SPD.SetVisibleModuleDetectionMode(1,0) # Continuous mode for APD 2
+        self.refresh_qwtPlot_hcam()
+        self.acquisition_thread_APD.start()
         
     def Start_Csignal(self):
         
@@ -942,6 +1004,9 @@ class Main(QMainWindow, Ui_MainWindow):
 
         self.acquiring_Csignal = True
         self.acquisition_thread_Csignal.start()
+    
+    def stop_APD(self):
+        self.acquiring_APD = False
         
     def Stop_Csignal(self):
         self.acquiring_Csignal = False
@@ -1023,6 +1088,12 @@ class Main(QMainWindow, Ui_MainWindow):
             self.Exp.Laser('on')
         elif not self.checkBox_Laser.isChecked():
             self.Exp.Laser('off')
+    
+    def Switch_Pin_6(self):
+        if self.checkBox_Arduino_Pin_6.isChecked():
+            self.Exp.arduino.digital_write(self.Exp.Pin_6, 1)
+        else:
+            self.Exp.arduino.digital_write(self.Exp.Pin_6, 0)
 
     def Set_PG45_max(self):
         self.S_PG45_max = float(self.lineEdit_PG45_max.text())
@@ -1038,12 +1109,18 @@ class Main(QMainWindow, Ui_MainWindow):
             
     def Switch_normalisation(self):
         self.normalisation = self.checkBox_normalisation.isChecked()
-            
+       
     def Switch_Shutter(self):
         if self.checkBox_Shutter.isChecked():
             self.Exp.Shutter('close')
         else:
             self.Exp.Shutter('open')
+            
+    def Switch_Shutter_microscope(self):
+        if self.checkBox_Shutter_microscope.isChecked():
+            self.Exp.Shutter_(self.Exp.Pin_5, 'close')
+        else:
+            self.Exp.Shutter_(self.Exp.Pin_5, 'open')
 
     def Switch_Shutter_out(self):
         if self.checkBox_Shutter_out.isChecked():
@@ -1051,7 +1128,6 @@ class Main(QMainWindow, Ui_MainWindow):
         else:
             self.Exp.Shutter_out('open')
         
-
 if __name__ == '__main__':
 
     app = QtGui.QApplication(sys.argv)
