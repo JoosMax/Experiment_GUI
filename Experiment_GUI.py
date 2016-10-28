@@ -2,7 +2,7 @@
 """
 Created on Mon Apr 25 15:33:18 2016
 
-@author: eq15b
+@author: eq15b - Maxime Joos
 """
 import os
 # open source module
