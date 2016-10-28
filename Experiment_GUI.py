@@ -12,6 +12,7 @@ from PyQt4.uic import loadUiType
 from PyQt4 import QtCore, QtGui, Qt
 import PyQt4.Qwt5 as Qwt
 #from matplotlib import colors
+from matplotlib.patches import Ellipse
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt4agg import (
     FigureCanvasQTAgg as FigureCanvas,
@@ -684,6 +685,27 @@ class Main(QMainWindow, Ui_MainWindow):
 #        self.curve_Sat_fit.setStyle(Qwt.QwtPlotCurve.Lines )
         self.curve_Sat_fit.setPen(Qt.QPen(Qt.Qt.red, 3))
         self.qwtPlot_hcam.replot()
+        
+    def Plot_ellipse(self, S1, S2, S3):
+        Dp = np.sqrt(S1**2 + S2**2 + S3**2) # Degree of polarisation
+        if S1 > 0 : Psi = np.arctan(S2/S1) / 2
+        elif S1 < 0: Psi = np.arctan(S2/S1) / 2 + np.pi/2
+        elif S1 == 0: Psi = np.pi/4 - np.sign(S2) * np.pi/4 
+        Chi = np.arctan(S3/np.sqrt(S1**2 + S2**2)) / 2
+
+        grand_axe = Dp*np.cos(Chi)
+        petit_axe = Dp*np.sin(Chi)
+
+        ell = Ellipse(xy = np.zeros(2), width = petit_axe, height = grand_axe, angle = Psi*180/np.pi - 90)
+        fig_ellipse = Figure()
+        ax_ellipse = fig_ellipse.add_subplot(111, aspect = 'equal')
+        ax_ellipse.add_artist(ell)
+        ell.set_facecolor('w')
+
+        ax_ellipse.set_xlim(-0.5, 0.5)
+        ax_ellipse.set_ylim(-0.5, 0.5)
+        self.rmmpl_map()
+        self.addmpl_map(fig_ellipse)
         
     def Plot_Psat(self, x, y):
         self.curve_sat.setData(x, y)
